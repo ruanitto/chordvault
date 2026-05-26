@@ -1,6 +1,6 @@
 {
   "name": "chordvault",
-  "version": "1.12.1",
+  "version": "1.12.2",
   "description": "Self-hosted chord sheet manager with transpose",
   "author": "Rudy Samuel",
   "license": "AGPL-3.0-or-later",
@@ -14,7 +14,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "concurrently \"node server.js\" \"cd frontend && npm run dev\"",
+    "dev": "concurrently \"NODE_ENV=development node server.js\" \"cd frontend && npm run dev\"",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"*.js\" \"lib/**/*.js\" \"routes/**/*.js\"",

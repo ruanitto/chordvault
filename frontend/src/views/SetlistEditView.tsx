@@ -5,12 +5,12 @@ import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../context/I18nContext';
 import { useToast } from '../context/ToastContext';
 import { useLocalSetlists } from '../hooks/useLocalSetlists';
-import { formatLocalEntry, enrichLocalEntry } from '../lib/setlists';
+import { formatLocalEntry, enrichLocalSetlistSongs } from '../lib/setlists';
 import { SongPicker } from '../components/SongPicker';
 import { Loading } from '../components/Loading';
 import { EmptyState } from '../components/EmptyState';
-import { getSongKey } from '../lib/chords';
-import type { Setlist, SetlistEntry, SongListItem, Song } from '../types';
+import { SetlistEntryCard } from '../components/SetlistEntryCard';
+import type { Setlist, SongListItem } from '../types';
 
 interface SetlistEditViewProps {
   setlistId: number | string;
@@ -22,7 +22,15 @@ export function SetlistEditView({ setlistId, navigate }: SetlistEditViewProps) {
   const { user } = useAuth();
   const { t } = useI18n();
   const toast = useToast();
-  const ls = useLocalSetlists();
+  const {
+    getOne,
+    rename,
+    remove,
+    moveEntry: lsMoveEntry,
+    removeEntry: lsRemoveEntry,
+    addEntry: lsAddEntry,
+    updateEntry: lsUpdateEntry,
+  } = useLocalSetlists();
   
   const isLocal = typeof setlistId === 'string' && setlistId.startsWith('local_');
   const [setlist, setSetlist] = useState<Setlist | null>(null);
@@ -30,7 +38,7 @@ export function SetlistEditView({ setlistId, navigate }: SetlistEditViewProps) {
 
   const load = useCallback(async () => {
     if (isLocal) {
-      const sl = ls.getOne(String(setlistId));
+      const sl = getOne(String(setlistId));
       if (!sl) { navigate(user ? 'setlists' : 'public-setlists'); return; }
       
       const formatted: Setlist = {
@@ -67,7 +75,7 @@ export function SetlistEditView({ setlistId, navigate }: SetlistEditViewProps) {
       toast((e as Error).message, 'error');
       navigate(user ? 'setlists' : 'public-setlists');
     }
-  }, [apiCall, toast, navigate, setlistId, user, isLocal, ls]);
+  }, [apiCall, toast, navigate, setlistId, user, isLocal, getOne]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -78,7 +86,7 @@ export function SetlistEditView({ setlistId, navigate }: SetlistEditViewProps) {
 
     if (isLocal) {
       if (nameInput.length > 200) return;
-      ls.rename(String(setlistId), nameInput);
+      rename(String(setlistId), nameInput);
       setSetlist((prev) => prev ? { ...prev, name: nameInput } : prev);
     } else {
       const vis = (document.getElementById('setlist-visibility') as HTMLInputElement)?.checked ? 'public' : 'private';
@@ -94,7 +102,7 @@ export function SetlistEditView({ setlistId, navigate }: SetlistEditViewProps) {
     if (!confirm(t('setlist.confirmDelete'))) return;
 
     if (isLocal) {
-      ls.remove(String(setlistId));
+      remove(String(setlistId));
       toast(t('setlist.deleted'), 'success');
       location.hash = '';
       navigate(user ? 'setlists' : 'public-setlists');
@@ -112,8 +120,8 @@ export function SetlistEditView({ setlistId, navigate }: SetlistEditViewProps) {
     if (!setlist) return;
 
     if (isLocal) {
-      ls.moveEntry(String(setlistId), idx, dir);
-      const sl = ls.getOne(String(setlistId));
+      lsMoveEntry(String(setlistId), idx, dir);
+      const sl = getOne(String(setlistId));
       if (sl) {
         setSetlist((prev) => prev ? {
           ...prev,
@@ -134,7 +142,7 @@ export function SetlistEditView({ setlistId, navigate }: SetlistEditViewProps) {
 
   const removeEntry = async (entryId: number | string, idx: number) => {
     if (isLocal) {
-      ls.removeEntry(String(setlistId), idx);
+      lsRemoveEntry(String(setlistId), idx);
       setSetlist((prev) => prev ? { ...prev, entries: prev.entries.filter((_, i) => i !== idx) } : prev);
       toast(t('setlist.songRemoved'), 'success');
     } else {
@@ -148,7 +156,7 @@ export function SetlistEditView({ setlistId, navigate }: SetlistEditViewProps) {
 
   const addSong = async (song: SongListItem) => {
     if (isLocal) {
-      const added = ls.addEntry(String(setlistId), {
+      const added = lsAddEntry(String(setlistId), {
         song_id: song.id,
         title: song.title,
         artist: song.artist || '',
@@ -178,7 +186,7 @@ export function SetlistEditView({ setlistId, navigate }: SetlistEditViewProps) {
     const newTranspose = (entry.transpose ?? 0) + delta;
 
     if (isLocal) {
-      ls.updateEntry(String(setlistId), idx, { transpose: newTranspose });
+      lsUpdateEntry(String(setlistId), idx, { transpose: newTranspose });
       setSetlist((prev) => {
         if (!prev) return null;
         const entries = [...prev.entries];
@@ -201,17 +209,15 @@ export function SetlistEditView({ setlistId, navigate }: SetlistEditViewProps) {
   };
 
   const playLocal = async (startIndex = 0) => {
-    const sl = ls.getOne(String(setlistId));
+    const sl = getOne(String(setlistId));
     if (!sl || sl.entries.length === 0) return;
     try {
-      const fetches = sl.entries.map((e) => apiCall<Song>('GET', `/api/songs/${e.song_id}`).catch(() => null));
-      const results = await Promise.all(fetches);
-      const entries = results.map((song, i) => enrichLocalEntry(sl.entries[i], song, i)).filter(Boolean) as SetlistEntry[];
+      const entries = await enrichLocalSetlistSongs(sl.entries, apiCall);
       if (entries.length === 0) { toast('No songs could be loaded', 'error'); return; }
       const enrichedSetlist: Setlist = {
         id: String(setlistId),
         name: sl.name,
-        entries: entries as SetlistEntry[],
+        entries,
         isLocal: true,
         visibility: 'private',
         event_date: null
@@ -303,49 +309,21 @@ export function SetlistEditView({ setlistId, navigate }: SetlistEditViewProps) {
         <EmptyState icon="&#127926;" text={t('setlist.noSongsYet')} />
       ) : (
         <div className="setlist-entries" id="setlist-entries">
-          {setlist.entries.map((entry, idx) => {
-            const keyDisplay = getSongKey(entry.content_override || entry.content, entry.transpose);
-            return (
-              <div key={entry.entry_id} className="song-card setlist-song-item" onClick={() => handleItemClick(idx)}>
-                {isEditable && (
-                  <div className="setlist-reorder" onClick={(e) => e.stopPropagation()}>
-                    {idx > 0 ? (
-                      <button className="setlist-arrow-btn" onClick={() => moveEntry(idx, -1)} title="Move up">&#9650;</button>
-                    ) : <span className="setlist-arrow-btn disabled" />}
-                    {idx < setlist.entries.length - 1 ? (
-                      <button className="setlist-arrow-btn" onClick={() => moveEntry(idx, 1)} title="Move down">&#9660;</button>
-                    ) : <span className="setlist-arrow-btn disabled" />}
-                  </div>
-                )}
-                <div className="setlist-song-pos">{idx + 1}</div>
-                <div className="song-card-info">
-                  <div className="song-card-title">
-                    {entry.title}
-                    {entry.visibility === 'private' && <span className="badge badge-private" title="Private">&#128274;</span>}
-                    {!isLocal && isEditable && entry.content_override && <span className="badge badge-edited">{t('setlist.edited')}</span>}
-                  </div>
-                  <div className="song-card-meta">
-                    {entry.artist ? `${entry.artist} · ` : ''}{keyDisplay}
-                  </div>
-                </div>
-                {isEditable && (
-                  <div className="setlist-entry-controls" onClick={(e) => e.stopPropagation()}>
-                    <button className="btn btn-ghost btn-sm" onClick={() => handleTransposeEntry(entry.entry_id, idx, -1)}>&#9837;</button>
-                    <button className="btn btn-ghost btn-sm" onClick={() => handleTransposeEntry(entry.entry_id, idx, 1)}>&#9839;</button>
-                  </div>
-                )}
-                {isEditable && (
-                  <button
-                    className="setlist-remove-btn"
-                    onClick={(e) => { e.stopPropagation(); removeEntry(entry.entry_id, idx); }}
-                    title="Remove"
-                  >
-                    &#10005;
-                  </button>
-                )}
-              </div>
-            );
-          })}
+          {setlist.entries.map((entry, idx) => (
+            <SetlistEntryCard
+              key={entry.entry_id}
+              entry={entry}
+              idx={idx}
+              totalCount={setlist.entries.length}
+              isEditable={isEditable}
+              isLocal={isLocal}
+              onMove={moveEntry}
+              onRemove={removeEntry}
+              onTranspose={handleTransposeEntry}
+              onClick={handleItemClick}
+              t={t}
+            />
+          ))}
         </div>
       )}
 
