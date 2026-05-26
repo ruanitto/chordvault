@@ -4,6 +4,7 @@ import { ApiError } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { getSetlistOverrides, saveSetlistOverride } from '../lib/storage';
+import { enrichLocalEntry } from '../lib/setlists';
 import type { Setlist, SetlistEntry, Song } from '../types';
 
 interface UseSetlistPlayerOptions {
@@ -70,24 +71,7 @@ export function useSetlistPlayer({
           Promise.all(fetches)
             .then((results) => {
               const entries = results
-                .map((song, i) => {
-                  if (!song) return null;
-                  return {
-                    song_id: song.id,
-                    entry_id: `local_${i}`,
-                    title: song.title,
-                    artist: song.artist || '',
-                    content: song.content,
-                    content_override: null,
-                    transpose: 0,
-                    nashville: 0,
-                    font: null,
-                    two_col: null,
-                    bpm: song.bpm || null,
-                    youtube_url: song.youtube_url || null,
-                    language: song.language || 'en',
-                  };
-                })
+                .map((song, i) => enrichLocalEntry(sl.entries[i], song, i))
                 .filter(Boolean) as SetlistEntry[];
 
               const enriched: Setlist = {

@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../context/I18nContext';
 import { useToast } from '../context/ToastContext';
 import { useLocalSetlists } from '../hooks/useLocalSetlists';
+import { formatLocalEntry, enrichLocalEntry } from '../lib/setlists';
 import { SongPicker } from '../components/SongPicker';
 import { Loading } from '../components/Loading';
 import { EmptyState } from '../components/EmptyState';
@@ -35,21 +36,7 @@ export function SetlistEditView({ setlistId, navigate }: SetlistEditViewProps) {
       const formatted: Setlist = {
         id: sl.id,
         name: sl.name,
-        entries: sl.entries.map((e, idx) => ({
-          entry_id: `local_${idx}`,
-          song_id: e.song_id,
-          title: e.title,
-          artist: e.artist || '',
-          transpose: e.transpose || 0,
-          nashville: e.nashville || 0,
-          content: '',
-          content_override: null,
-          font: null,
-          two_col: null,
-          bpm: null,
-          youtube_url: null,
-          language: 'en',
-        })),
+        entries: sl.entries.map((e, idx) => formatLocalEntry(e, idx)),
         isLocal: true,
         visibility: 'private',
         event_date: null,
@@ -130,21 +117,7 @@ export function SetlistEditView({ setlistId, navigate }: SetlistEditViewProps) {
       if (sl) {
         setSetlist((prev) => prev ? {
           ...prev,
-            entries: sl.entries.map((e, idx) => ({
-              entry_id: `local_${idx}`,
-              song_id: e.song_id,
-              title: e.title,
-              artist: e.artist || '',
-              transpose: e.transpose || 0,
-              nashville: e.nashville || 0,
-              content: '',
-              content_override: null,
-              font: null,
-              two_col: null,
-              bpm: null,
-              youtube_url: null,
-              language: 'en',
-            })),
+          entries: sl.entries.map((e, idx) => formatLocalEntry(e, idx)),
         } : null);
       }
     } else {
@@ -233,25 +206,7 @@ export function SetlistEditView({ setlistId, navigate }: SetlistEditViewProps) {
     try {
       const fetches = sl.entries.map((e) => apiCall<Song>('GET', `/api/songs/${e.song_id}`).catch(() => null));
       const results = await Promise.all(fetches);
-      const entries = results.map((song, i) => {
-        if (!song) return null;
-        const e = sl.entries[i];
-        return {
-          song_id: song.id,
-          entry_id: `local_${i}`,
-          title: song.title,
-          artist: song.artist || '',
-          content: song.content,
-          content_override: null,
-          transpose: e.transpose ?? 0,
-          nashville: e.nashville ?? 0,
-          font: null,
-          two_col: null,
-          bpm: song.bpm || null,
-          youtube_url: song.youtube_url || null,
-          language: song.language || 'en',
-        };
-      }).filter(Boolean);
+      const entries = results.map((song, i) => enrichLocalEntry(sl.entries[i], song, i)).filter(Boolean) as SetlistEntry[];
       if (entries.length === 0) { toast('No songs could be loaded', 'error'); return; }
       const enrichedSetlist: Setlist = {
         id: String(setlistId),
