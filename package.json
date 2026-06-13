@@ -17,6 +17,7 @@
     "dev": "concurrently \"NODE_ENV=development node server.js\" \"cd frontend && npm run dev\"",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "test:backend": "node --test test/unit/*.test.js",
     "format": "prettier --write \"*.js\" \"lib/**/*.js\" \"routes/**/*.js\"",
     "format:check": "prettier --check \"*.js\" \"lib/**/*.js\" \"routes/**/*.js\"",
     "prepare": "husky || true"
