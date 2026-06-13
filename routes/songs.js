@@ -154,6 +154,9 @@ function createSongsRouter() {
     if (!id) return res.status(400).json({ error: 'Invalid song ID' });
     const existing = Song.findById(id);
     if (!existing) return res.status(404).json({ error: 'Song not found or not yours' });
+    if (existing.user_id !== req.user.id && !isAdminRole(req.user.role)) {
+      return res.status(403).json({ error: 'Not authorized to edit this song' });
+    }
     const { content, format_detected, visibility } = req.body;
     const finalContent = content?.trim() || existing.content;
     if (content && content.length > LIMITS.MAX_CONTENT) return res.status(400).json({ error: `Song content too large (max ${LIMITS.MAX_CONTENT / 1000}KB)` });
