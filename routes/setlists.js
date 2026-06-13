@@ -1,7 +1,7 @@
 const express = require('express');
 const { requireAuth, optionalAuth, isAdminRole } = require('../lib/auth');
 const { STATUS, VISIBILITY, LIMITS } = require('../lib/constants');
-const { parseId, validateSetlistInput, validateTranspose, parsePaginationParams } = require('../lib/validation');
+const { parseId, validateSetlistInput, validateTranspose, validateNashville, parsePaginationParams } = require('../lib/validation');
 const Setlist = require('../lib/models/setlist');
 const Song = require('../lib/models/song');
 
@@ -12,6 +12,22 @@ function resolveSetlist(res, setlistId, userId) {
     return null;
   }
   return setlist;
+}
+
+function sanitizeEntries(entries, userId, userRole) {
+  return entries.map((e) => {
+    if (e.visibility === VISIBILITY.PRIVATE && e.song_user_id !== userId && !isAdminRole(userRole)) {
+      return {
+        entry_id: e.entry_id, song_id: e.song_id, position: e.position,
+        transpose: 0, nashville: 0, content_override: null,
+        title: '[Private Song]', artist: '', content: '', key: '',
+        youtube_url: null, bpm: null, tags: null, language: '',
+        username: '', is_private_placeholder: true,
+      };
+    }
+    const { song_user_id: _, ...safe } = e;
+    return safe;
+  });
 }
 
 function createSetlistsRouter() {
@@ -45,19 +61,7 @@ function createSetlistsRouter() {
     if (!setlist) return res.status(404).json({ error: 'Setlist not found' });
     const entries = Setlist.getEntries(id);
     const userId = req.user ? req.user.id : 0;
-    const safeEntries = entries.map((e) => {
-      if (e.visibility === VISIBILITY.PRIVATE && e.song_user_id !== userId && !(req.user && isAdminRole(req.user.role))) {
-        return {
-          entry_id: e.entry_id, song_id: e.song_id, position: e.position,
-          transpose: 0, nashville: 0, content_override: null,
-          title: '[Private Song]', artist: '', content: '', key: '',
-          youtube_url: null, bpm: null, tags: null, language: '',
-          username: '', is_private_placeholder: true,
-        };
-      }
-      const { song_user_id: _, ...safe } = e;
-      return safe;
-    });
+    const safeEntries = sanitizeEntries(entries, userId, req.user?.role);
     res.json({ ...setlist, entries: safeEntries });
   });
 
@@ -67,19 +71,7 @@ function createSetlistsRouter() {
     const setlist = resolveSetlist(res, id, req.user.id);
     if (!setlist) return;
     const entries = Setlist.getEntries(id);
-    const safeEntries = entries.map((e) => {
-      if (e.visibility === VISIBILITY.PRIVATE && e.song_user_id !== req.user.id && !isAdminRole(req.user.role)) {
-        return {
-          entry_id: e.entry_id, song_id: e.song_id, position: e.position,
-          transpose: 0, nashville: 0, content_override: null,
-          title: '[Private Song]', artist: '', content: '', key: '',
-          youtube_url: null, bpm: null, tags: null, language: '',
-          username: '', is_private_placeholder: true,
-        };
-      }
-      const { song_user_id: _, ...safe } = e;
-      return safe;
-    });
+    const safeEntries = sanitizeEntries(entries, req.user.id, req.user.role);
     res.json({ ...setlist, entries: safeEntries });
   });
 
@@ -113,9 +105,8 @@ function createSetlistsRouter() {
     if (!songIdParsed) return res.status(400).json({ error: 'Invalid song_id' });
     const transposeErr = validateTranspose(transpose);
     if (transposeErr) return res.status(400).json({ error: transposeErr });
-    if (nashville !== undefined && typeof nashville !== 'boolean' && nashville !== 0 && nashville !== 1) {
-      return res.status(400).json({ error: 'Nashville must be a boolean' });
-    }
+    const nashvilleErr = validateNashville(nashville);
+    if (nashvilleErr) return res.status(400).json({ error: nashvilleErr });
     const song = Song.findById(songIdParsed);
     if (!song) return res.status(404).json({ error: 'Song not found' });
     if (song.status === STATUS.PENDING) return res.status(400).json({ error: 'Cannot add a pending correction to a setlist' });
@@ -137,9 +128,8 @@ function createSetlistsRouter() {
     const { transpose, nashville, font, two_col, content_override } = req.body;
     const transposeErr = validateTranspose(transpose);
     if (transposeErr) return res.status(400).json({ error: transposeErr });
-    if (nashville !== undefined && typeof nashville !== 'boolean' && nashville !== 0 && nashville !== 1) {
-      return res.status(400).json({ error: 'Nashville must be a boolean' });
-    }
+    const nashvilleErr = validateNashville(nashville);
+    if (nashvilleErr) return res.status(400).json({ error: nashvilleErr });
     if (content_override !== undefined && content_override !== null && content_override.length > LIMITS.MAX_CONTENT) {
       return res.status(400).json({ error: 'Content override too large (max 100KB)' });
     }

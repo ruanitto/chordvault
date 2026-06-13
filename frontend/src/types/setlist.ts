@@ -66,3 +66,11 @@ export interface SetlistPreferences {
   fontSize: number;
   hideYt: boolean;
 }
+
+export interface PaginatedSetlists {
+  setlists: SetlistListItem[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}

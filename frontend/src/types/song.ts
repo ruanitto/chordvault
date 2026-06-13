@@ -50,3 +50,11 @@ export interface SongVersion {
   parent_id: number | null;
   youtube_url: string | null;
 }
+
+export interface PaginatedSongs {
+  songs: SongListItem[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
