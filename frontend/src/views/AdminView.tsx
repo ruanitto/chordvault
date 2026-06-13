@@ -29,7 +29,9 @@ export function AdminView({ navigate }: AdminViewProps) {
     try {
       const inv = await apiCall<InviteCode[]>('GET', '/api/admin/invites');
       setInvites(inv);
-    } catch { /* ignore */ }
+    } catch (e) {
+      console.warn('Failed to load invites:', (e as Error).message);
+    }
   }, [apiCall]);
 
   const load = useCallback(async () => {

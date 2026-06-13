@@ -61,7 +61,8 @@ export async function enrichLocalSetlistSongs(
       .then((song) => {
         cache[id] = song;
       })
-      .catch(() => {
+      .catch((e) => {
+        console.warn(`Failed to fetch song ${id} for setlist:`, e.message);
         cache[id] = null;
       })
   );

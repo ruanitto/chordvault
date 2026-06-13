@@ -70,7 +70,9 @@ export function App() {
   useEffect(() => {
     api<AuthConfig>('GET', '/api/auth/config').then((cfg) => {
       if (cfg.demoMode) setDemoMode(true);
-    }).catch(() => {});
+    }).catch((e) => {
+      console.warn('Failed to load auth config:', e.message);
+    });
   }, [setDemoMode]);
 
   // Auto-scroll to top when any overlay appears
