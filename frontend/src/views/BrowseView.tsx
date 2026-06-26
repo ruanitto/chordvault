@@ -6,7 +6,7 @@ import { useToast } from '../context/ToastContext';
 import { SongCard } from '../components/SongCard';
 import { EmptyState } from '../components/EmptyState';
 import { Pagination } from '../components/Pagination';
-import type { SongListItem } from '../types';
+import type { SongListItem, PaginatedSongs } from '../types';
 import { LANGUAGES } from '../lib/languages';
 import { getSessionItem, setSessionItem } from '../lib/storage';
 
@@ -40,14 +40,7 @@ export function BrowseView({ navigate }: BrowseViewProps) {
       params.push(`limit=20`);
       url += '?' + params.join('&');
       
-      interface PaginatedSongsResponse {
-        songs: SongListItem[];
-        total: number;
-        page: number;
-        limit: number;
-        totalPages: number;
-      }
-      const data = await api<PaginatedSongsResponse>('GET', url);
+      const data = await api<PaginatedSongs>('GET', url);
       setSongs(data.songs);
       setPage(data.page);
       setTotalPages(data.totalPages);

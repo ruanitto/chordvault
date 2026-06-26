@@ -5,7 +5,7 @@ import { useToast } from '../context/ToastContext';
 import { SetlistCard } from '../components/SetlistCard';
 import { EmptyState } from '../components/EmptyState';
 import { Pagination } from '../components/Pagination';
-import type { SetlistListItem } from '../types';
+import type { SetlistListItem, PaginatedSetlists } from '../types';
 import { getSessionItem, setSessionItem } from '../lib/storage';
 
 interface PublicSetlistsViewProps {
@@ -37,14 +37,7 @@ export function PublicSetlistsView({ navigate }: PublicSetlistsViewProps) {
     params.push(`limit=20`);
     const qs = params.length > 0 ? `?${params.join('&')}` : '';
     try {
-      interface PaginatedSetlistsResponse {
-        setlists: SetlistListItem[];
-        total: number;
-        page: number;
-        limit: number;
-        totalPages: number;
-      }
-      const data = await apiCall<PaginatedSetlistsResponse>('GET', `/api/setlists/public${qs}`);
+      const data = await apiCall<PaginatedSetlists>('GET', `/api/setlists/public${qs}`);
       setSetlists(data.setlists);
       setPage(data.page);
       setTotalPages(data.totalPages);

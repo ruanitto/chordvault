@@ -126,6 +126,60 @@ function decryptApiKey(stored) {
   return decipher.update(Buffer.from(encHex, 'hex')) + decipher.final('utf8');
 }
 
+function resolveGeminiClient(user, requestModel) {
+  if (!user?.gemini_api_key) return { error: 'No Gemini API key configured. Add one in Settings.', status: 400 };
+  let apiKey;
+  try { apiKey = decryptApiKey(user.gemini_api_key); }
+  catch { return { error: 'Failed to decrypt API key. Try re-saving it in Settings.', status: 500 }; }
+  const model = (requestModel && GEMINI_MODELS.some(m => m.id === requestModel))
+    ? requestModel
+    : (user.gemini_model || DEFAULT_GEMINI_MODEL);
+  return { apiKey, model };
+}
+
+function parseImageDataUrl(image) {
+  let mimeType = 'image/jpeg';
+  const dataUrlMatch = image.match(/^data:((?:image\/(?:jpeg|png|webp|gif))|application\/pdf);base64,/);
+  let rawBase64 = image;
+  if (dataUrlMatch) {
+    mimeType = dataUrlMatch[1];
+    rawBase64 = image.slice(dataUrlMatch[0].length);
+  }
+  return { mimeType, rawBase64 };
+}
+
+async function callGeminiApi(apiKey, model, requestBody) {
+  const geminiRes = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+      body: JSON.stringify(requestBody),
+    }
+  );
+
+  if (!geminiRes.ok) {
+    const errData = await geminiRes.json().catch(() => ({}));
+    return { error: errData?.error?.message || `Gemini API error (${geminiRes.status})` };
+  }
+
+  let data;
+  try { data = await geminiRes.json(); }
+  catch { return { error: 'Gemini returned an invalid response' }; }
+
+  if (data?.promptFeedback?.blockReason) {
+    return { error: `Gemini blocked the request: ${data.promptFeedback.blockReason}` };
+  }
+
+  const candidate = data?.candidates?.[0];
+  if (candidate?.finishReason && candidate.finishReason !== 'STOP' && candidate.finishReason !== 'MAX_TOKENS') {
+    return { error: `Gemini could not process the request (${candidate.finishReason})` };
+  }
+
+  const text = candidate?.content?.parts?.[0]?.text || '';
+  return { text };
+}
+
 function createSettingsRouter() {
   const router = express.Router();
 
@@ -212,27 +266,10 @@ function createSettingsRouter() {
     if (sizeEstimate > LIMITS.MAX_OCR_IMAGE) return res.status(400).json({ error: 'File too large (max 18MB)' });
 
     const user = User.getFullById(req.user.id);
-    if (!user?.gemini_api_key) return res.status(400).json({ error: 'No Gemini API key configured. Add one in Settings.' });
+    const client = resolveGeminiClient(user, requestModel);
+    if (client.error) return res.status(client.status).json({ error: client.error });
 
-    let apiKey;
-    try {
-      apiKey = decryptApiKey(user.gemini_api_key);
-    } catch {
-      return res.status(500).json({ error: 'Failed to decrypt API key. Try re-saving it in Settings.' });
-    }
-
-    // Resolve model: request body > user preference > default
-    const geminiModel = (requestModel && GEMINI_MODELS.some(m => m.id === requestModel))
-      ? requestModel
-      : (user.gemini_model || DEFAULT_GEMINI_MODEL);
-
-    let mimeType = 'image/jpeg';
-    const dataUrlMatch = image.match(/^data:((?:image\/(?:jpeg|png|webp|gif))|application\/pdf);base64,/);
-    let rawBase64 = image;
-    if (dataUrlMatch) {
-      mimeType = dataUrlMatch[1];
-      rawBase64 = image.slice(dataUrlMatch[0].length);
-    }
+    const { mimeType, rawBase64 } = parseImageDataUrl(image);
 
     const isJsonMode = !user.gemini_prompt;
     const prompt = user.gemini_prompt || DEFAULT_OCR_PROMPT;
@@ -254,44 +291,18 @@ function createSettingsRouter() {
     }
 
     try {
-      const geminiRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-          body: JSON.stringify(requestBody),
-        }
-      );
+      const result = await callGeminiApi(client.apiKey, client.model, requestBody);
+      if (result.error) return res.status(502).json({ error: result.error });
 
-      if (!geminiRes.ok) {
-        const errData = await geminiRes.json().catch(() => ({}));
-        const errMsg = errData?.error?.message || `Gemini API error (${geminiRes.status})`;
-        return res.status(502).json({ error: errMsg });
-      }
-
-      let data;
-      try { data = await geminiRes.json(); }
-      catch { return res.status(502).json({ error: 'Gemini returned an invalid response' }); }
-
-      // Check for blocked content
-      if (data?.promptFeedback?.blockReason) {
-        return res.status(502).json({ error: `Gemini blocked the request: ${data.promptFeedback.blockReason}` });
-      }
-
-      const candidate = data?.candidates?.[0];
-      if (candidate?.finishReason && candidate.finishReason !== 'STOP' && candidate.finishReason !== 'MAX_TOKENS') {
-        return res.status(502).json({ error: `Gemini could not process the image (${candidate.finishReason}). Try a clearer photo.` });
-      }
-
-      const text = candidate?.content?.parts?.[0]?.text || '';
+      const { text } = result;
       if (!text) return res.status(502).json({ error: 'Gemini returned no text. Try a clearer image.' });
 
       if (isJsonMode) {
         let parsed;
         try { parsed = JSON.parse(text); }
         catch { return res.status(502).json({ error: 'Gemini returned invalid JSON. Try again.' }); }
-        const result = jsonToChordPro(parsed);
-        return res.json({ text: result.text, language: result.language });
+        const chordPro = jsonToChordPro(parsed);
+        return res.json({ text: chordPro.text, language: chordPro.language });
       }
 
       // Legacy text mode (custom prompt users)
@@ -317,23 +328,10 @@ function createSettingsRouter() {
     if (history.length > 20) return res.status(400).json({ error: 'Conversation too long. Start a new extraction.' });
 
     const user = User.getFullById(req.user.id);
-    if (!user?.gemini_api_key) return res.status(400).json({ error: 'No Gemini API key configured.' });
+    const client = resolveGeminiClient(user, requestModel);
+    if (client.error) return res.status(client.status).json({ error: client.error });
 
-    let apiKey;
-    try { apiKey = decryptApiKey(user.gemini_api_key); }
-    catch { return res.status(500).json({ error: 'Failed to decrypt API key.' }); }
-
-    const geminiModel = (requestModel && GEMINI_MODELS.some(m => m.id === requestModel))
-      ? requestModel
-      : (user.gemini_model || DEFAULT_GEMINI_MODEL);
-
-    let mimeType = 'image/jpeg';
-    const dataUrlMatch = image.match(/^data:((?:image\/(?:jpeg|png|webp|gif))|application\/pdf);base64,/);
-    let rawBase64 = image;
-    if (dataUrlMatch) {
-      mimeType = dataUrlMatch[1];
-      rawBase64 = image.slice(dataUrlMatch[0].length);
-    }
+    const { mimeType, rawBase64 } = parseImageDataUrl(image);
 
     // Refine always uses text-based prompt for context (even if initial extraction used JSON mode)
     const refinePrompt = user.gemini_prompt || OCR_REFINE_PROMPT;
@@ -352,30 +350,10 @@ function createSettingsRouter() {
     });
 
     try {
-      const geminiRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-          body: JSON.stringify({ contents })
-        }
-      );
+      const result = await callGeminiApi(client.apiKey, client.model, { contents });
+      if (result.error) return res.status(502).json({ error: result.error });
 
-      if (!geminiRes.ok) {
-        const errData = await geminiRes.json().catch(() => ({}));
-        return res.status(502).json({ error: errData?.error?.message || `Gemini API error (${geminiRes.status})` });
-      }
-
-      let data;
-      try { data = await geminiRes.json(); }
-      catch { return res.status(502).json({ error: 'Gemini returned an invalid response' }); }
-
-      const candidate = data?.candidates?.[0];
-      if (candidate?.finishReason && candidate.finishReason !== 'STOP' && candidate.finishReason !== 'MAX_TOKENS') {
-        return res.status(502).json({ error: `Gemini could not process the request (${candidate.finishReason})` });
-      }
-
-      const text = candidate?.content?.parts?.[0]?.text || '';
+      const { text } = result;
       if (!text) return res.status(502).json({ error: 'Gemini returned no text. Try rephrasing your correction.' });
 
       // Strip markdown fences if present

@@ -7,7 +7,7 @@ import { useLocalSetlists } from '../hooks/useLocalSetlists';
 import { SetlistCard } from '../components/SetlistCard';
 import { EmptyState } from '../components/EmptyState';
 import { Pagination } from '../components/Pagination';
-import type { SetlistListItem } from '../types';
+import type { SetlistListItem, PaginatedSetlists } from '../types';
 import { getSessionItem, setSessionItem } from '../lib/storage';
 
 interface SetlistsViewProps {
@@ -49,14 +49,7 @@ export function SetlistsView({ navigate }: SetlistsViewProps) {
     params.push(`limit=20`);
     const qs = params.length > 0 ? `?${params.join('&')}` : '';
     try {
-      interface PaginatedSetlistsResponse {
-        setlists: SetlistListItem[];
-        total: number;
-        page: number;
-        limit: number;
-        totalPages: number;
-      }
-      const data = await apiCall<PaginatedSetlistsResponse>('GET', `/api/setlists${qs}`);
+      const data = await apiCall<PaginatedSetlists>('GET', `/api/setlists${qs}`);
       setSetlists(data.setlists);
       setPage(data.page);
       setTotalPages(data.totalPages);
