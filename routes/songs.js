@@ -144,7 +144,7 @@ function createSongsRouter() {
       Song.importSongs(req.user.id, valid);
       res.json({ imported: valid.length, errors });
     } catch (e) {
-      console.error('Import failed:', e.message);
+      console.error('Import failed:', e.message, e.stack);
       res.status(500).json({ error: 'Import failed. Please check your data and try again.' });
     }
   });

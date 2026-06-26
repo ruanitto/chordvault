@@ -29,7 +29,9 @@ export function AuthView({ navigate }: AuthViewProps) {
         setUsername('demo');
         setPassword('demopass123');
       }
-    }).catch(() => {});
+    }).catch((e) => {
+      console.warn('Failed to load auth config:', e.message);
+    });
   }, []);
 
   useEffect(() => {

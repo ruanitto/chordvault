@@ -44,7 +44,9 @@ export function OcrModal({ hasGeminiKey, onResult, onClose }: OcrModalProps) {
   useEffect(() => {
     api<{ model: string; models: { id: string; label: string; hint: string }[] }>('GET', '/api/settings/ocr-model')
       .then(data => { setSelectedModel(data.model); setModels(data.models); })
-      .catch(() => {});
+      .catch((e) => {
+        console.warn('Failed to load OCR model settings:', e.message);
+      });
   }, [api]);
 
   // Chat state

@@ -61,10 +61,14 @@ export function SongEditView({ songId, navigate }: SongEditViewProps) {
     if (user) {
       apiCall<{ hasKey: boolean }>('GET', '/api/settings/gemini-key')
         .then((d) => setHasGeminiKey(d.hasKey))
-        .catch(() => {});
+        .catch((e) => {
+          console.warn('Failed to check Gemini key status:', e.message);
+        });
       apiCall<{ languages: string[] }>('GET', '/api/settings/languages')
         .then((d) => setPreferredLanguages(d.languages))
-        .catch(() => {});
+        .catch((e) => {
+          console.warn('Failed to load preferred languages:', e.message);
+        });
     }
   }, [apiCall, user]);
 

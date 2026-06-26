@@ -45,11 +45,15 @@ export function SongView({ songId, navigate }: SongViewProps) {
     if (!song) return;
     apiCall<SongVersion[]>('GET', `/api/songs/${songId}/versions`)
       .then((v) => { if (v.length > 1) setVersions(v); })
-      .catch(() => {});
+      .catch((e) => {
+        console.warn('Failed to load song versions:', e.message);
+      });
     if (user && user.username === song.username) {
       apiCall<Correction[]>('GET', `/api/songs/${songId}/corrections`)
         .then(setCorrections)
-        .catch(() => {});
+        .catch((e) => {
+          console.warn('Failed to load corrections:', e.message);
+        });
     }
   }, [song, songId, apiCall, user]);
 

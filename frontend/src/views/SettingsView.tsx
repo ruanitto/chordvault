@@ -29,14 +29,19 @@ export function SettingsView() {
     try {
       const data = await apiCall<{ languages: string[] }>('GET', '/api/settings/languages');
       setPreferredLangs(data.languages);
-    } catch {}
+    } catch (e) {
+      console.warn('Failed to load preferred languages:', (e as Error).message);
+    }
   }, [apiCall]);
 
   const loadGeminiStatus = useCallback(async () => {
     try {
       const data = await apiCall<{ hasKey: boolean }>('GET', '/api/settings/gemini-key');
       setGeminiStatus(data.hasKey ? '✓ Key saved' : 'No key set');
-    } catch { setGeminiStatus('Could not check status'); }
+    } catch (e) {
+      console.warn('Failed to check Gemini key status:', (e as Error).message);
+      setGeminiStatus('Could not check status');
+    }
   }, [apiCall]);
 
   const loadOcrPrompt = useCallback(async () => {
@@ -47,7 +52,9 @@ export function SettingsView() {
         setOcrPrompt(data.prompt);
         setHasCustomPrompt(true);
       }
-    } catch {}
+    } catch (e) {
+      console.warn('Failed to load OCR prompt:', (e as Error).message);
+    }
   }, [apiCall]);
 
   const loadOcrModel = useCallback(async () => {
@@ -55,7 +62,9 @@ export function SettingsView() {
       const data = await apiCall<{ model: string; models: { id: string; label: string; hint: string }[] }>('GET', '/api/settings/ocr-model');
       setOcrModel(data.model);
       setModelList(data.models);
-    } catch {}
+    } catch (e) {
+      console.warn('Failed to load OCR model settings:', (e as Error).message);
+    }
   }, [apiCall]);
 
   useEffect(() => { loadGeminiStatus(); loadOcrPrompt(); loadOcrModel(); }, [loadGeminiStatus, loadOcrPrompt, loadOcrModel]);
